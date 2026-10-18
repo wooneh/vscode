@@ -27,6 +27,11 @@ export class GitTimelineItem extends TimelineItem {
 	readonly previousRef: string;
 	readonly message: string;
 
+	/** The file as it was named at `ref`. */
+	fileUri?: Uri;
+	/** The file as it was named at `previousRef`. */
+	previousFileUri?: Uri;
+
 	constructor(
 		ref: string,
 		previousRef: string,
@@ -62,6 +67,15 @@ export class GitTimelineItem extends TimelineItem {
 		}
 		return ref.endsWith('^') ? `${ref.substr(0, 8)}^` : ref.substr(0, 8);
 	}
+}
+
+/** The two sides of the comparison for a timeline item of the file at `uri`. */
+export function getTimelineDiffUris(item: GitTimelineItem, uri: Uri): { originalUri: Uri; modifiedUri: Uri } {
+	const fileUri = item.fileUri ?? uri;
+	return {
+		originalUri: toGitUri(item.previousFileUri ?? fileUri, item.previousRef),
+		modifiedUri: item.ref === '' ? uri : toGitUri(fileUri, item.ref)
+	};
 }
 
 /**
@@ -225,13 +239,16 @@ export class GitTimelineProvider implements TimelineProvider, WorkspaceTimelineP
 				continue;
 			}
 
-			const previousRef = commits[index + 1]?.hash ?? emptyTree;
+			const previousCommit = commits[index + 1];
+			const previousRef = previousCommit?.hash ?? emptyTree;
 			const item = new GitTimelineItem(c.hash, previousRef, message, timestamp, c.hash, 'git:file:commit', Uri.file(repo.root));
 			item.iconPath = new ThemeIcon('git-commit');
 			item.description = description;
 			item.tooltip = tooltip;
 			// The file can have had another name at this commit when following renames
-			item.resourceUri = c.filePath ? toGitUri(Uri.file(path.join(repo.root, c.filePath)), c.hash) : undefined;
+			item.fileUri = c.filePath ? Uri.file(path.join(repo.root, c.filePath)) : undefined;
+			item.previousFileUri = previousCommit?.filePath ? Uri.file(path.join(repo.root, previousCommit.filePath)) : undefined;
+			item.resourceUri = item.fileUri ? toGitUri(item.fileUri, c.hash) : undefined;
 
 			const cmd = this.commands.resolveTimelineOpenDiffCommand(item, uri);
 			if (cmd) {

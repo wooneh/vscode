@@ -5,7 +5,10 @@
 
 import 'mocha';
 import * as assert from 'assert';
-import { getWorkspaceTimelinePage } from '../timelineProvider';
+import * as path from 'path';
+import { Uri } from 'vscode';
+import { getTimelineDiffUris, getWorkspaceTimelinePage, GitTimelineItem } from '../timelineProvider';
+import { fromGitUri } from '../uri';
 
 suite('git timeline', () => {
 	interface TestCommit {
@@ -49,5 +52,45 @@ suite('git timeline', () => {
 			'/a': [{ hash: 'A', timestamp: 100 }, { hash: 'B', timestamp: 1 }, { hash: 'C', timestamp: 90 }],
 			'/b': [{ hash: 'D', timestamp: 95 }],
 		}, 2), [['A', 'D'], ['B', 'C']]);
+	});
+
+	suite('open comparison', () => {
+		const root = Uri.file(path.join(path.sep, 'repo'));
+		const fileAt = (name: string) => Uri.joinPath(root, name);
+		const current = fileAt('new.txt');
+
+		function getDiffSides(item: GitTimelineItem) {
+			const { originalUri, modifiedUri } = getTimelineDiffUris(item, current);
+			return [originalUri, modifiedUri].map(fromGitUri);
+		}
+
+		function commitItem(ref: string, previousRef: string, fileName: string, previousFileName: string): GitTimelineItem {
+			const item = new GitTimelineItem(ref, previousRef, 'message', 0, ref, 'git:file:commit', root);
+			item.fileUri = fileAt(fileName);
+			item.previousFileUri = fileAt(previousFileName);
+			return item;
+		}
+
+		test('compares a commit from before a rename at the old path', () => {
+			assert.deepStrictEqual(getDiffSides(commitItem('b', 'a', 'old.txt', 'old.txt')), [
+				{ path: fileAt('old.txt').fsPath, ref: 'a' },
+				{ path: fileAt('old.txt').fsPath, ref: 'b' },
+			]);
+		});
+
+		test('compares a rename commit from the old path to the new path', () => {
+			assert.deepStrictEqual(getDiffSides(commitItem('c', 'b', 'new.txt', 'old.txt')), [
+				{ path: fileAt('old.txt').fsPath, ref: 'b' },
+				{ path: current.fsPath, ref: 'c' },
+			]);
+		});
+
+		test('compares staged changes at the current path', () => {
+			const item = new GitTimelineItem('~', 'HEAD', 'Staged Changes', 0, 'index', 'git:file:index', root);
+			assert.deepStrictEqual(getDiffSides(item), [
+				{ path: current.fsPath, ref: 'HEAD' },
+				{ path: current.fsPath, ref: '~' },
+			]);
+		});
 	});
 });

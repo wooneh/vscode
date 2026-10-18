@@ -15,7 +15,7 @@ import { GitResourceGroup, Repository, Resource, ResourceGroupType } from './rep
 import { DiffEditorSelectionHunkToolbarContext, LineChange, applyLineChanges, getIndexDiffInformation, getModifiedRange, getWorkingTreeDiffInformation, intersectDiffWithRange, invertLineChange, toLineChanges, toLineRanges, compareLineChanges } from './staging';
 import { fromGitUri, toGitUri, isGitUri, toMergeUris, toMultiFileDiffEditorUris } from './uri';
 import { coalesce, DiagnosticSeverityConfig, dispose, fromNow, getHistoryItemDisplayName, getStashDescription, grep, isDefined, isDescendant, isLinuxSnap, isRemote, isWindows, pathEquals, relativePath, subject, toDiagnosticSeverity, truncate } from './util';
-import { GitTimelineItem } from './timelineProvider';
+import { getTimelineDiffUris, GitTimelineItem } from './timelineProvider';
 import { ApiRepository } from './api/api1';
 import { getRemoteSourceActions, pickRemoteSource } from './remoteSource';
 import { RemoteSourceAction } from './typings/git-base';
@@ -4806,7 +4806,7 @@ export class CommandCenter {
 			return undefined;
 		}
 
-		const basename = path.basename(uri.fsPath);
+		const basename = path.basename((item.fileUri ?? uri).fsPath);
 
 		let title;
 		if ((item.previousRef === 'HEAD' || item.previousRef === '~') && item.ref === '') {
@@ -4818,10 +4818,11 @@ export class CommandCenter {
 			title = l10n.t('{0} ({1}) \u2194 {0} ({2})', basename, item.shortPreviousRef, item.shortRef);
 		}
 
+		const { originalUri, modifiedUri } = getTimelineDiffUris(item, uri);
 		return {
 			command: 'vscode.diff',
 			title: l10n.t('Open Comparison'),
-			arguments: [toGitUri(uri, item.previousRef), item.ref === '' ? uri : toGitUri(uri, item.ref), title, options]
+			arguments: [originalUri, modifiedUri, title, options]
 		};
 	}
 
@@ -4935,7 +4936,7 @@ export class CommandCenter {
 
 
 		const title = l10n.t('{0} \u2194 {1}', leftTitle, rightTitle);
-		await commands.executeCommand('vscode.diff', selected.ref === '' ? uri : toGitUri(uri, selected.ref), item.ref === '' ? uri : toGitUri(uri, item.ref), title);
+		await commands.executeCommand('vscode.diff', getTimelineDiffUris(selected, uri).modifiedUri, getTimelineDiffUris(item, uri).modifiedUri, title);
 	}
 
 	@command('git.rebaseAbort', { repository: true })
